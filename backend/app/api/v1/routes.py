@@ -5,7 +5,7 @@ from geoalchemy2.elements import WKTElement
 from app.api.deps import get_db
 from app.models.route import Incident
 from app.schemas.route import IncidentCreate, IncidentResponse
-
+from sqlalchemy import func
 router = APIRouter()
 
 @router.post("/incidents", response_model=IncidentResponse)
@@ -37,3 +37,29 @@ def report_incident(incident_in: IncidentCreate, db: Session = Depends(get_db)):
         created_at=new_incident.created_at,
         is_active=new_incident.is_active
     )
+@router.get("/incidents", response_model=list[IncidentResponse])
+def get_active_incidents(db: Session = Depends(get_db), limit: int = 100):
+    """
+    [P0] Fetch all active incidents for the map frontend.
+    Unpacks PostGIS geometry directly in the query for speed.
+    """
+    # We query the Incident object AND unpack the spatial point in one database trip
+    records = db.query(
+        Incident,
+        func.ST_Y(Incident.location).label("lat"),
+        func.ST_X(Incident.location).label("lon")
+    ).filter(Incident.is_active == True).limit(limit).all()
+
+    # Map the tuple results cleanly into your Pydantic schema
+    return [
+        IncidentResponse(
+            id=incident.id,
+            category=incident.category,
+            description=incident.description,
+            latitude=lat,
+            longitude=lon,
+            created_at=incident.created_at,
+            is_active=incident.is_active
+        )
+        for incident, lat, lon in records
+    ]
