@@ -1,1 +1,40 @@
+.env# Environments
+venv/
+env/
 .env
+.venv
+env.bak
+venv.bak
+
+# Python Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Docker
+docker-compose.override.yml
+.docker/
+
+# Pytest / Coverage (if you write tests later)
+.pytest_cache/
+.coverage
+htmlcov/
+
+# VS Code / IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs and databases
+*.log
+*.sqlite3
