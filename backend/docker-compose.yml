@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: password_change_me_2026
       POSTGRES_DB: awaaz_spatial_db
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_spatial_data:/var/lib/postgresql/data
     healthcheck:
