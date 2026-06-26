@@ -34,5 +34,5 @@ model = lgb.train(
 )
 
 # 4. Save the compiled model to your services folder
-joblib.dump(model, '../app/services/lgbm_risk_model.pkl')
+joblib.dump(model, 'app/services/lgbm_risk_model.pkl')
 print("Model trained and saved successfully.")
