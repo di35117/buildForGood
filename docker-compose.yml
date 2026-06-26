@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgis/postgis:15-3.3
+    container_name: awaaz_postgis_db
+    environment:
+      POSTGRES_USER: awaaz_dev
+      POSTGRES_PASSWORD: password_change_me_2026
+      POSTGRES_DB: awaaz_spatial_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_spatial_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U awaaz_dev -d awaaz_spatial_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - awaaz_network
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: awaaz_telemetry_cache
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_telemetry_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - awaaz_network
+
+volumes:
+  postgres_spatial_data:
+  redis_telemetry_data:
+
+networks:
+  awaaz_network:
+    driver: bridge
