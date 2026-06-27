@@ -1,5 +1,5 @@
-import joblib
 import pandas as pd
+import lightgbm as lgb
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import func, cast
@@ -7,19 +7,33 @@ from geoalchemy2.types import Geography
 from geoalchemy2.elements import WKTElement
 from app.models.route import Incident, ColdStartPrior
 
-# Load the model globally so it doesn't reload on every API request
-MODEL_PATH = "app/services/lgbm_risk_model.pkl"
-try:
-    risk_model = joblib.load(MODEL_PATH)
-except FileNotFoundError:
-    risk_model = None
-    print("Warning: LightGBM model not found. Run training script.")
+MODEL_PATH = "app/ml/models/risk_v1.txt"
+_risk_model = None
+
+def get_model():
+    """Lazy loader for the model to ensure it loads natively."""
+    global _risk_model
+    if _risk_model is None:
+        try:
+            _risk_model = lgb.Booster(model_file=MODEL_PATH)
+        except Exception as e:
+            print(f"WARNING: LightGBM model not found. {e}")
+    return _risk_model
+
+def reload_model():
+    """Called by the ML Feedback Loop after a successful retrain."""
+    global _risk_model
+    try:
+        _risk_model = lgb.Booster(model_file=MODEL_PATH)
+        print("SUCCESS: Risk model reloaded in memory.")
+    except Exception as e:
+        print(f"ERROR: Failed to reload model: {e}")
 
 def calculate_area_risk(db: Session, lat: float, lon: float, radius_m: float = 500.0) -> dict:
     point_wkt = f"POINT({lon} {lat})"
     now = datetime.utcnow()
     
-    # 1. Fetch real-time DB states (The Dynamic Features)
+    # 1. Fetch Dynamic Features
     recent_threshold = now - timedelta(days=7)
     recent_incidents = db.query(Incident).filter(
         func.ST_DWithin(
@@ -31,14 +45,22 @@ def calculate_area_risk(db: Session, lat: float, lon: float, radius_m: float = 5
         Incident.is_active == True
     ).count()
 
-    # 2. Fetch Spatial Priors (The Static Features)
-    # In production, query your ColdStartPrior table here. 
-    # Mocking for the example:
-    street_lit = 1 # 1 = Yes, 0 = No
-    commercial_density = 0.65 
+    # 2. Fetch Spatial Priors (Fixed Bug 1.5)
+    prior = db.query(ColdStartPrior).filter(
+        func.ST_DWithin(
+            cast(ColdStartPrior.geom, Geography),
+            cast(WKTElement(point_wkt, srid=4326), Geography),
+            radius_m
+        )
+    ).first()
 
-    # 3. Construct the Feature Vector
+    street_lit = prior.street_lit if prior else 1
+    commercial_density = prior.commercial_density if prior else 0.65
+
+    # 3. Construct the Feature Vector (Fixed Bug 1.1: Now passing all 7 features!)
     features = pd.DataFrame([{
+        'latitude': lat,
+        'longitude': lon,
         'hour_of_day': now.hour,
         'is_weekend': 1 if now.weekday() >= 5 else 0,
         'street_lit': street_lit,
@@ -47,15 +69,13 @@ def calculate_area_risk(db: Session, lat: float, lon: float, radius_m: float = 5
     }])
 
     # 4. LightGBM Inference
-    if risk_model:
-        # Predict returns a numpy array, extract the first float
-        final_score = float(risk_model.predict(features)[0])
-        final_score = max(0.0, min(final_score, 10.0)) # Clamp between 0 and 10
+    model = get_model()
+    if model:
+        final_score = float(model.predict(features)[0])
+        final_score = max(0.0, min(final_score, 10.0))
     else:
-        # Fallback to heuristic if model fails to load
         final_score = 5.0 
 
-    # 5. Classify for the frontend map colors
     if final_score < 4.0:
         level = "LOW"
     elif final_score < 7.0:
