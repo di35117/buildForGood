@@ -9,7 +9,7 @@ from app.models.route import Incident, ColdStartPrior
 from app.api.v1 import routes, legal
 # NEW: Import your API router
 from app.api.v1 import routes
-
+from app.api.v1 import routes, legal, telemetry
 app = FastAPI(
     title=settings.PROJECT_NAME,
     openapi_url=f"{settings.API_V1_STR}/openapi.json"
@@ -36,3 +36,4 @@ def root_check():
 # NEW: Register the endpoints
 app.include_router(routes.router, prefix=settings.API_V1_STR + "/routes", tags=["Safe Routes"])
 app.include_router(legal.router, prefix=settings.API_V1_STR + "/legal", tags=["Legal Companion"])
+app.include_router(telemetry.router, prefix=settings.API_V1_STR + "/telemetry", tags=["Telemetry Monitoring"])
