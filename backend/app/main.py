@@ -6,7 +6,7 @@ from app.db.base_class import Base
 
 from app.models.user import User
 from app.models.route import Incident, ColdStartPrior
-
+from app.api.v1 import routes, legal
 # NEW: Import your API router
 from app.api.v1 import routes
 
@@ -35,3 +35,4 @@ def root_check():
 
 # NEW: Register the endpoints
 app.include_router(routes.router, prefix=settings.API_V1_STR + "/routes", tags=["Safe Routes"])
+app.include_router(legal.router, prefix=settings.API_V1_STR + "/legal", tags=["Legal Companion"])
