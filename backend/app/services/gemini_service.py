@@ -29,7 +29,7 @@ def process_incident_audio(audio_file_path: str) -> dict:
     
     # 3. Generate the response using Gemini 3.5 Flash
     response = client.models.generate_content(
-        model="gemini-3.5-flash",
+        model="gemini-1.5-flash",
         contents=[prompt, audio_file],
         config=types.GenerateContentConfig(
             response_mime_type="application/json"
