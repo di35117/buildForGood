@@ -9,14 +9,17 @@ router = APIRouter()
 
 @router.post("/archive")
 async def archive_sos_dossier(dossier: dict, db: Session = Depends(deps.get_db)):
-    """
-    Called internally after an SOS fires. Saves the JSON permanently to PostgreSQL.
-    This establishes the bridge so Module 2 (Legal Companion) can fetch it later.
-    """
-    lat = dossier["last_known_location"]["lat"]
-    lon = dossier["last_known_location"]["lon"]
+    """Saves the JSON permanently to PostgreSQL."""
     
-    # Create the PostGIS POINT geometry
+    # Safely extract location to prevent early-SOS crashes (Fixed Bug 1.4)
+    loc = dossier.get("last_known_location")
+    if not loc or "lat" not in loc or "lon" not in loc:
+        raise HTTPException(
+            status_code=400, 
+            detail="Cannot archive SOS dossier: Missing location coordinates."
+        )
+        
+    lat, lon = loc["lat"], loc["lon"]
     geom_point = f"SRID=4326;POINT({lon} {lat})"
     
     new_log = IncidentLog(
@@ -33,10 +36,6 @@ async def archive_sos_dossier(dossier: dict, db: Session = Depends(deps.get_db))
 
 @router.post("/verify/{incident_id}")
 async def verify_incident_and_learn(incident_id: str, db: Session = Depends(deps.get_db)):
-    """
-    [Tier 2 Dashboard] Called when an NGO verifies the incident.
-    Flips the status and triggers the ML Auto-Learner loop.
-    """
     incident = db.query(IncidentLog).filter(IncidentLog.incident_id == incident_id).first()
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
@@ -44,10 +43,8 @@ async def verify_incident_and_learn(incident_id: str, db: Session = Depends(deps
     if incident.is_verified:
         return {"message": "Incident already verified."}
         
-    # 1. Mark as verified
     incident.is_verified = True
     
-    # 2. Trigger ML Auto-Learner
     current_hour = datetime.utcnow().hour
     success = MLFeedbackService.integrate_verified_incident(
         lat=incident.latitude, 
