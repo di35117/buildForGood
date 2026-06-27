@@ -1,27 +1,55 @@
-from fastapi import APIRouter, HTTPException, status
+import asyncio
+from typing import Dict
+from fastapi import APIRouter, HTTPException, BackgroundTasks
 from app.services.dossier_service import DossierService
 from app.services.notification_service import NotificationService
 
 router = APIRouter()
 
-@router.post("/sos/{user_id}")
-async def trigger_sos_escalation(user_id: str):
+# Global dictionary to hold active countdown timers in memory
+active_escalations: Dict[str, asyncio.Task] = {}
+
+@router.post("/sos/start/{user_id}")
+async def start_escalation_countdown(user_id: str):
     """
-    [P0] Triggered when the confirmation window expires or the user hits the panic button.
-    Compiles live state into a dossier and fires the external notification gateways.
+    Called by the Fusion Engine. Starts the 10-second countdown.
+    If not cancelled in time, it fires the true SOS.
     """
-    # 1. Gather all tracking telemetry from memory
-    dossier = await DossierService.compile_emergency_dossier(user_id)
-    
-    if "error" in dossier:
-        raise HTTPException(status_code=404, detail=dossier["error"])
+    if user_id in active_escalations:
+        return {"status": "ALREADY_ARMED", "message": "Countdown is already running."}
         
-    # 2. Fire notifications asynchronously to emergency contacts
-    await NotificationService.send_emergency_alerts(dossier)
+    async def countdown_task():
+        try:
+            await asyncio.sleep(10)
+            # Time's up! Fire the actual SOS.
+            await trigger_sos_escalation(user_id)
+        except asyncio.CancelledError:
+            print(f"SOS Countdown for {user_id} was successfully aborted.")
+        except Exception as e:
+            print(f"Escalation failed: {str(e)}")
+        finally:
+            active_escalations.pop(user_id, None)
+
+    task = asyncio.create_task(countdown_task())
+    active_escalations[user_id] = task
     
-    return {
-        "status": "ESCALATED",
-        "message": "SOS system armed. Emergency contacts notified via gateway.",
-        "incident_id": dossier.get("incident_id"),
-        "dispatched_at": dossier.get("generated_at")
-    }
+    return {"status": "COUNTDOWN_STARTED", "seconds_remaining": 10}
+
+@router.post("/sos/cancel/{user_id}")
+async def cancel_escalation(user_id: str):
+    """Hits the brakes on the countdown if it's a false alarm."""
+    task = active_escalations.get(user_id)
+    if task:
+        task.cancel()
+        return {"status": "CANCELLED", "message": "SOS system disarmed."}
+    return {"status": "IGNORED", "message": "No active countdown found for user."}
+
+async def trigger_sos_escalation(user_id: str):
+    """The real deal. Fires off the dossier and notifications."""
+    dossier = await DossierService.compile_emergency_dossier(user_id)
+    if "error" in dossier:
+        print(f"Failed to compile dossier: {dossier['error']}")
+        return
+        
+    await NotificationService.send_emergency_alerts(dossier)
+    print(f"🚨 CRITICAL SOS DISPATCHED FOR {user_id} 🚨")
