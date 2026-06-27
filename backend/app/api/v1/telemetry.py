@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, status
 from app.schemas.telemetry import SessionInitRequest, SessionInitResponse, TelemetryPing, TelemetryResponse
 from app.services.telemetry_service import TelemetryService
-
+from app.services.connection_manager import manager
 router = APIRouter()
 
 @router.post("/session/start", response_model=SessionInitResponse, status_code=status.HTTP_201_CREATED)
@@ -33,14 +33,25 @@ async def ingest_telemetry(user_id: str, ping: TelemetryPing):
         timestamp=ping.timestamp
     )
     
-    # Session verification layer
     session_id = f"track:{user_id}"
+    
+    # NEW: The WebSocket Alert Trigger
+    if is_deviated:
+        alert_payload = {
+            "type": "ROUTE_DEVIATION_ALERT",
+            "session_id": session_id,
+            "distance_meters": round(distance, 2),
+            "message": "Deviation detected. Triggering confirmation window."
+        }
+        # Push the alert instantly to the frontend
+        await manager.send_personal_alert(alert_payload, user_id)
+
+    # Check for missing session
     if distance == 0.0 and not is_deviated:
-        # Check if 0.0 was returned due to non-existent tracking session
         import redis.asyncio as aioredis
         from app.services.telemetry_service import redis_client
         if not await redis_client.exists(session_id):
-            raise HTTPException(status_code=404, detail="Active tracking session not found for this identifier.")
+            raise HTTPException(status_code=404, detail="Active tracking session not found.")
 
     return TelemetryResponse(
         session_id=session_id,
