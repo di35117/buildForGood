@@ -1,9 +1,10 @@
+import os
 import lightgbm as lgb
 import pandas as pd
 import joblib
 from sklearn.model_selection import train_test_split
 
-df = pd.read_csv("synthetic_risk_data.csv") 
+df = pd.read_csv("../synthetic_risk_data.csv") 
 
 X = df.drop(columns=['target_risk_score'])
 y = df['target_risk_score']
