@@ -57,3 +57,36 @@ def transcribe_incident_audio(audio_file_path: str) -> str:
     
     client.files.delete(name=audio_file.name)
     return response.text
+def moderate_forum_post(content: str) -> bool:
+    """
+    [P1] Module 3 AI Moderator: Scans anonymous forum posts for crisis signals.
+    Returns True if the post requires human NGO review, False if it's safe to publish.
+    """
+    prompt = f"""
+    You are a safety moderator for an anonymous peer support forum for young girls in India. 
+    Read the following post. Does it contain immediate threats of suicide, self-harm, severe domestic abuse, or a critical medical emergency?
+    
+    If YES (it is a crisis), reply with exactly the word: TRUE
+    If NO (it is a normal health question, venting, or peer advice), reply with exactly the word: FALSE
+    
+    Do not include any other text, punctuation, or explanation. Just TRUE or FALSE.
+    
+    Post content: "{content}"
+    """
+    
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt
+        )
+        
+        # Clean the response to ensure we just get the boolean
+        result = response.text.strip().upper()
+        
+        if "TRUE" in result:
+            return True
+        return False
+        
+    except Exception as e:
+        print(f"AI Moderation Failed: {e}. Defaulting to safe (False).")
+        return False
