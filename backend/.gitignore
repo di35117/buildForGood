@@ -1,21 +1,28 @@
-.env# Environments
-venv/
-env/
+# Environments & Secrets
 .env
-.venv
+.env.*
 env.bak
 venv.bak
+venv/
+env/
+.venv/
+
+# Alembic & Databases
+alembic.ini
+*.sqlite3
+*.db
 
 # Python Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
 
 # Docker
 docker-compose.override.yml
 .docker/
 
-# Pytest / Coverage (if you write tests later)
+# Pytest / Coverage 
 .pytest_cache/
 .coverage
 htmlcov/
@@ -35,8 +42,5 @@ htmlcov/
 ehthumbs.db
 Thumbs.db
 
-# Logs and databases
+# Logs
 *.log
-*.sqlite3
-alembic.ini
-alembic/versions
