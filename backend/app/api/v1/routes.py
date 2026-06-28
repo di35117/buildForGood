@@ -2,14 +2,19 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from geoalchemy2.elements import WKTElement
-from app.api.deps import get_db
+from app.api.deps import get_db, get_current_user  # 🔥 NEW: Auth dependency
 from app.models.route import Incident
 from app.schemas.route import IncidentCreate, IncidentResponse
 from sqlalchemy import func
+
 router = APIRouter()
 
 @router.post("/incidents", response_model=IncidentResponse)
-def report_incident(incident_in: IncidentCreate, db: Session = Depends(get_db)):
+def report_incident(
+    incident_in: IncidentCreate, 
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)  # 🔥 FIX: Prevents fake spam reports
+):
     """
     [P0] Submit a new community incident report.
     Converts frontend Lat/Lon into a PostGIS spatial point.
@@ -37,8 +42,13 @@ def report_incident(incident_in: IncidentCreate, db: Session = Depends(get_db)):
         created_at=new_incident.created_at,
         is_active=new_incident.is_active
     )
+
 @router.get("/incidents", response_model=list[IncidentResponse])
-def get_active_incidents(db: Session = Depends(get_db), limit: int = 100):
+def get_active_incidents(
+    limit: int = 100, 
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)  # 🔥 FIX: Protects incident data
+):
     """
     [P0] Fetch all active incidents for the map frontend.
     Unpacks PostGIS geometry directly in the query for speed.
