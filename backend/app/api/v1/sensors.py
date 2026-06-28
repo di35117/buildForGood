@@ -1,9 +1,14 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException
 from pydantic import BaseModel
+from typing import Optional
+from sqlalchemy.orm import Session
+
 from app.services.fusion_engine import FusionEngine
 from app.services.connection_manager import manager
 from .escalation import start_escalation_countdown
-from app.api.deps import get_current_user  # 🔥 NEW: Auth dependency
+from app.api.deps import get_current_user, get_db
+from app.models.user import User
+from app.core.security import verify_password
 
 router = APIRouter()
 
@@ -35,17 +40,40 @@ class SensorPayload(BaseModel):
     route_deviation: bool = False
     motion_anomaly: bool = False
     audio_scream: bool = False
-    duress_pin: bool = False
+    duress_pin: Optional[str] = None # 🔥 FIX (Bug 2.5): Now expects the actual typed PIN string!
 
 @router.post("/sync")
 async def sync_device_sensors(
     payload: SensorPayload,
-    current_user: str = Depends(get_current_user)  # 🔥 FIX: Endpoint locked down
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)  
 ):
     """
     Ingests high-frequency sensor spikes from the mobile app.
     """
-    flags = payload.model_dump(exclude={"user_id"})
+    # 1. Fetch the authenticated user from the database
+    user = db.query(User).filter(User.username == current_user).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # 2. 🔥 FIX (Bug 2.5): Cryptographically verify the Duress PIN!
+    is_duress_verified = False
+    if payload.duress_pin:
+        if user.hashed_duress_pin and verify_password(payload.duress_pin, user.hashed_duress_pin):
+            is_duress_verified = True
+            print(f"⚠️ DURESS CODE VERIFIED for {user.username}. Silent SOS armed.")
+        else:
+            # If they enter the wrong PIN, we quietly ignore it so an attacker 
+            # testing PINs doesn't realize it failed.
+            print(f"Failed duress PIN attempt for {user.username}")
+            
+    # 3. Construct the verified flags for the Fusion Engine
+    flags = {
+        "route_deviation": payload.route_deviation,
+        "motion_anomaly": payload.motion_anomaly,
+        "audio_scream": payload.audio_scream,
+        "duress_pin": is_duress_verified  # Passed as a highly-weighted True/False to the engine
+    }
     
     is_critical, active_triggers, score = FusionEngine.evaluate_threat(
         user_id=payload.user_id, 
