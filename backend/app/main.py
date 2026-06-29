@@ -12,7 +12,7 @@ from app.models.incident_log import IncidentLog
 from app.models.shelter import Shelter 
 
 # 🔥 FIX: Removed live_alerts from this import list
-from app.api.v1 import auth, routes, legal, telemetry, escalation, evidence_bridge, sensors, support 
+from app.api.v1 import auth, routes, legal, telemetry, escalation, evidence_bridge, sensors, support, contacts 
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -46,3 +46,4 @@ app.include_router(escalation.router, prefix=settings.API_V1_STR + "/escalation"
 app.include_router(evidence_bridge.router, prefix="/api/v1/bridge", tags=["Evidence & ML"])
 app.include_router(sensors.router, prefix="/api/v1/sensors", tags=["Device Sensors"])
 app.include_router(support.router, prefix="/api/v1/support", tags=["Peer Support & Education"])
+app.include_router(contacts.router, prefix="/api/v1/contacts", tags=["Emergency Contacts"])
