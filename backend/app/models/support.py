@@ -1,5 +1,5 @@
 import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Boolean
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean
 from sqlalchemy.orm import relationship
 from app.db.base_class import Base
 
@@ -11,22 +11,19 @@ class ForumPost(Base):
     __tablename__ = "forum_posts"
 
     id = Column(Integer, primary_key=True, index=True)
-    author_id = Column(Integer, ForeignKey("user.id", ondelete="SET NULL"), nullable=True)
+    
+    # 🔥 FIX: Structural Anonymity. Real ID is never stored.
+    author_hash = Column(String, nullable=False, index=True)
     
     title = Column(String, nullable=False)
     content = Column(Text, nullable=False)
-    category = Column(String, index=True, default="menstrual_health") # Allows splitting Skin A and Skin B later
+    category = Column(String, index=True, default="menstrual_health") 
     
-    # Privacy & Safety Flags
     is_anonymous = Column(Boolean, default=True)
-    
-    # 🔥 The AI Moderation Flag: Gemini sets this to True if it detects self-harm or abuse
     requires_human_review = Column(Boolean, default=False, index=True) 
     
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
-    # Relationships
-    author = relationship("User")
     replies = relationship("ForumReply", back_populates="post", cascade="all, delete-orphan")
 
 
@@ -36,16 +33,15 @@ class ForumReply(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     post_id = Column(Integer, ForeignKey("forum_posts.id", ondelete="CASCADE"), nullable=False)
-    author_id = Column(Integer, ForeignKey("user.id", ondelete="SET NULL"), nullable=True)
+    
+    # 🔥 FIX: Structural Anonymity.
+    author_hash = Column(String, nullable=False, index=True)
     
     content = Column(Text, nullable=False)
     
-    # Privacy & Safety Flags
     is_anonymous = Column(Boolean, default=True)
     requires_human_review = Column(Boolean, default=False, index=True)
     
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
-    # Relationships
     post = relationship("ForumPost", back_populates="replies")
-    author = relationship("User")
