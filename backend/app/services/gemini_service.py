@@ -12,8 +12,10 @@ def process_incident_audio(audio_file_path: str, dossier_data: dict = None) -> d
     """
     audio_file = client.files.upload(file=audio_file_path)
     context_injection = ""
+    
+    # 🔥 FIX (Bug 2.5): Softened language to mitigate prompt injection confidence
     if dossier_data:
-        context_injection = f"\n\nCRITICAL CONTEXT: The user's device automatically triggered an SOS. Here is the verified telemetry and sensor data from the event: {json.dumps(dossier_data)}. Integrate this undeniable evidence into the complaint draft."
+        context_injection = f"\n\nCONTEXT: The user's device triggered an SOS. Supplementary telemetry data: {json.dumps(dossier_data)}. Review this data as context for the complaint draft."
 
     prompt = f"""
     You are a legal assistant for a women's safety platform in India.
@@ -72,7 +74,8 @@ def moderate_forum_post(content: str) -> bool:
         )
         result = response.text.strip().upper()
         
-        if "TRUE" in result:
+        # 🔥 FIX (Bug 3): Enforced strict equality to prevent substring bypasses
+        if result == "TRUE":
             return True
         return False
         
