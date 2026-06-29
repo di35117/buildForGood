@@ -17,15 +17,15 @@ class NotificationService:
         incident_id = dossier.get("incident_id")
         last_loc = dossier.get("last_known_location", {})
         
-        # 🔥 FIX: Querying real emergency contacts dynamically
         db = SessionLocal()
         try:
             contacts = db.query(EmergencyContact).filter(EmergencyContact.user_id == int(user_id)).all()
             target_numbers = [c.phone_number for c in contacts]
             
-            # Fallback to a national emergency line if user hasn't set contacts
+            # 🔥 FIX (Bug 2.2): Loud warning and correct local emergency routing
             if not target_numbers:
-                target_numbers = ["+91112"] 
+                logger.warning(f"⚠️ NO EMERGENCY CONTACTS SET FOR USER {user_id}. Falling back to national emergency line (112).")
+                target_numbers = ["112"] 
         finally:
             db.close()
         
