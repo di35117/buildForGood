@@ -45,7 +45,7 @@ def calculate_area_risk(db: Session, lat: float, lon: float, radius_m: float = 5
         Incident.is_active == True
     ).count()
 
-    # 2. Fetch Spatial Priors (Fixed Bug 1.5)
+    # 2. Fetch Spatial Priors 
     prior = db.query(ColdStartPrior).filter(
         func.ST_DWithin(
             cast(ColdStartPrior.geom, Geography),
@@ -54,10 +54,11 @@ def calculate_area_risk(db: Session, lat: float, lon: float, radius_m: float = 5
         )
     ).first()
 
-    street_lit = prior.street_lit if prior else 1
-    commercial_density = prior.commercial_density if prior else 0.65
+    # 🔥 FIX (Bug 2.1): Corrected attribute names to match DB model
+    street_lit = prior.street_lighting_score if prior else 1
+    commercial_density = prior.commercial_density_score if prior else 0.65
 
-    # 3. Construct the Feature Vector (Fixed Bug 1.1: Now passing all 7 features!)
+    # 3. Construct the Feature Vector
     features = pd.DataFrame([{
         'latitude': lat,
         'longitude': lon,
