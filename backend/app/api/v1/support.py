@@ -19,7 +19,8 @@ router = APIRouter()
 # ---------------------------------------------------------
 def generate_pseudonymous_hash(user_id: int) -> str:
     """Irreversibly hashes the user ID with a system secret."""
-    raw = f"{user_id}:{settings.SECRET_KEY}"
+    # 🔥 FIX (Bug 2.4): Using the dedicated salt
+    raw = f"{user_id}:{settings.ANONYMITY_SALT}"
     return hashlib.sha256(raw.encode()).hexdigest()
 
 class ReplyCreate(BaseModel):
@@ -50,11 +51,15 @@ async def create_anonymous_post(
     current_user: str = Depends(get_current_user)
 ):
     """[P1] Creates a new anonymous post and runs it through the AI Moderator."""
-    is_crisis = await run_in_threadpool(moderate_forum_post, post_in.content)
     user = db.query(User).filter(User.username == current_user).first()
+    # 🔥 FIX (Bug 2.6): Ensure user exists before hashing
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    is_crisis = await run_in_threadpool(moderate_forum_post, post_in.content)
     
     new_post = ForumPost(
-        author_hash=generate_pseudonymous_hash(user.id), # 🔥 Structurally Anonymized
+        author_hash=generate_pseudonymous_hash(user.id), 
         title=post_in.title,
         content=post_in.content,
         category=post_in.category,
@@ -93,12 +98,16 @@ async def create_reply(
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
         
-    is_crisis = await run_in_threadpool(moderate_forum_post, reply_in.content)
     user = db.query(User).filter(User.username == current_user).first()
+    # 🔥 FIX (Bug 2.6): Ensure user exists before hashing
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    is_crisis = await run_in_threadpool(moderate_forum_post, reply_in.content)
     
     new_reply = ForumReply(
         post_id=post_id,
-        author_hash=generate_pseudonymous_hash(user.id), # 🔥 Structurally Anonymized
+        author_hash=generate_pseudonymous_hash(user.id),
         content=reply_in.content,
         requires_human_review=is_crisis
     )
@@ -115,7 +124,7 @@ async def create_reply(
 @router.get("/moderation/queue", response_model=List[PostResponse])
 def get_flagged_posts(
     db: Session = Depends(get_db),
-    ngo_user: User = Depends(get_current_ngo_user) # 🔒 Locked to NGOs only
+    ngo_user: User = Depends(get_current_ngo_user) 
 ):
     """
     [P1] Dashboard endpoint for human counsellors to review posts 
