@@ -1,22 +1,19 @@
 import asyncio
 from typing import Dict
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
+from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from app.services.dossier_service import DossierService
 from app.services.notification_service import NotificationService
 from app.api.deps import get_current_user, get_db
 from app.models.user import User
+from app.models.incident_log import IncidentLog
+from app.db.session import SessionLocal
 
 router = APIRouter()
 
-# Global dictionary to hold active countdown timers in memory
 active_escalations: Dict[str, asyncio.Task] = {}
 
 async def start_escalation_countdown(user_id: str) -> bool:
-    """
-    Core countdown logic. Decoupled from the HTTP route so it can be 
-    safely called by sensors.py (Fusion Engine) in the background.
-    """
     if user_id in active_escalations:
         return False
         
@@ -40,7 +37,6 @@ async def trigger_manual_sos_route(
     db: Session = Depends(get_db),
     current_user: str = Depends(get_current_user)
 ):
-    """[P0] Manual panic button trigger. 🔥 BOLA FIXED: Identity derived from token."""
     user = db.query(User).filter(User.username == current_user).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -59,7 +55,6 @@ async def cancel_escalation(
     db: Session = Depends(get_db),
     current_user: str = Depends(get_current_user)
 ):
-    """[P0] Hits the brakes on the countdown. 🔥 BOLA FIXED: Identity derived from token."""
     user = db.query(User).filter(User.username == current_user).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -77,6 +72,26 @@ async def trigger_sos_escalation(user_id: str):
     if "error" in dossier:
         print(f"Failed to compile dossier: {dossier['error']}")
         return
+        
+    # 🔥 FIX: Automatic Archiving
+    db = SessionLocal()
+    try:
+        lat = dossier.get("last_known_location", {}).get("lat", 0)
+        lon = dossier.get("last_known_location", {}).get("lon", 0)
+        
+        new_log = IncidentLog(
+            incident_id=dossier["incident_id"],
+            user_id=dossier["user_id"],
+            latitude=lat,
+            longitude=lon,
+            geom=f"SRID=4326;POINT({lon} {lat})",
+            evidence_payload=dossier
+        )
+        db.add(new_log)
+        db.commit()
+        print(f"✅ Dossier securely archived for incident {dossier['incident_id']}")
+    finally:
+        db.close()
         
     await NotificationService.send_emergency_alerts(dossier)
     print(f"🚨 CRITICAL SOS DISPATCHED FOR {user_id} 🚨")
