@@ -8,12 +8,12 @@ from sqlalchemy.orm import Session
 from geoalchemy2.elements import WKTElement
 from sqlalchemy import func
 
-from app.api.deps import get_db, get_current_user  
+from app.api.deps import get_db, get_current_user, get_current_ngo_user # 🔥 NEW: NGO Bouncer imported
 from app.models.route import Incident
 from app.schemas.route import IncidentCreate, IncidentResponse
 from app.services.gemini_service import transcribe_incident_audio
 
-# 🔥 NEW: Imports for Trust Engine integration
+# Imports for Trust Engine integration
 from app.models.user import User
 from app.services.trust_engine import TrustEngine
 
@@ -34,11 +34,11 @@ def report_incident(
     """
     point_wkt = f"POINT({incident_in.longitude} {incident_in.latitude})"
     
-    # 🔥 FIX (Bug 1.6): Get the user's DB ID to attach to the report
+    # Get the user's DB ID to attach to the report
     user = db.query(User).filter(User.username == current_user).first()
     
     new_incident = Incident(
-        reporter_id=user.id if user else None,  # 🔥 Attached!
+        reporter_id=user.id if user else None,  # Attached!
         category=incident_in.category,
         description=incident_in.description,
         location=WKTElement(point_wkt, srid=4326)
@@ -102,11 +102,11 @@ async def report_incident_with_audio(
     # 3. Save to PostGIS
     point_wkt = f"POINT({longitude} {latitude})"
     
-    # 🔥 FIX (Bug 1.6): Get the user's DB ID to attach to the report
+    # Get the user's DB ID to attach to the report
     user = db.query(User).filter(User.username == current_user).first()
     
     new_incident = Incident(
-        reporter_id=user.id if user else None,  # 🔥 Attached!
+        reporter_id=user.id if user else None,  # Attached!
         category=category,
         description=final_description,
         location=WKTElement(point_wkt, srid=4326)
@@ -162,12 +162,16 @@ def get_active_incidents(
 def verify_community_incident(
     incident_id: int, 
     db: Session = Depends(get_db),
-    current_user: str = Depends(get_current_user)
+    ngo_user: User = Depends(get_current_ngo_user) # 🔥 ROLE LOCK APPLIED
 ):
     """[P1] NGO/Moderator verifies an incident. Rewards the reporter."""
     incident = db.query(Incident).filter(Incident.id == incident_id).first()
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
+        
+    # 🔥 PREVENT ABUSE: Cannot verify your own report
+    if incident.reporter_id == ngo_user.id:
+        raise HTTPException(status_code=403, detail="You cannot verify your own incident report.")
         
     if incident.reporter_id:
         TrustEngine.reward_user(db, incident.reporter_id)
@@ -178,12 +182,16 @@ def verify_community_incident(
 def flag_fake_incident(
     incident_id: int, 
     db: Session = Depends(get_db),
-    current_user: str = Depends(get_current_user)
+    ngo_user: User = Depends(get_current_ngo_user) # 🔥 ROLE LOCK APPLIED
 ):
     """[P1] NGO/Moderator marks an incident as fake. Penalizes the reporter and removes the pin."""
     incident = db.query(Incident).filter(Incident.id == incident_id).first()
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
+        
+    # 🔥 PREVENT ABUSE: Cannot false-flag your own report
+    if incident.reporter_id == ngo_user.id:
+        raise HTTPException(status_code=403, detail="You cannot flag your own incident report.")
         
     incident.is_active = False # Hide from the map
     
