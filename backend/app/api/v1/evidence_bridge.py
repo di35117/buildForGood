@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from app.api import deps
 from app.api.deps import get_current_user
 from app.models.incident_log import IncidentLog
+from app.models.user import User
 from app.services.ml_feedback_service import MLFeedbackService
 from datetime import datetime
 
@@ -15,6 +16,13 @@ async def archive_sos_dossier(
     current_user: str = Depends(get_current_user) 
 ):
     """Saves the JSON permanently to PostgreSQL."""
+    user = db.query(User).filter(User.username == current_user).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    # 🔥 BOLA FIXED: Silently overwrite any client-provided ID with the verified one
+    dossier["user_id"] = str(user.id)
+    
     loc = dossier.get("last_known_location")
     if not loc or "lat" not in loc or "lon" not in loc:
         raise HTTPException(
@@ -53,7 +61,6 @@ async def verify_incident_and_learn(
         
     incident.is_verified = True
     
-    # Offload the heavy model training to the background
     current_hour = datetime.utcnow().hour
     background_tasks.add_task(
         MLFeedbackService.integrate_verified_incident,
@@ -70,9 +77,6 @@ async def verify_incident_and_learn(
         "message": "Incident verified. AI model retraining queued in background."
     }
 
-# ---------------------------------------------------------
-# 🔥 NEW: NGO DASHBOARD ROUTE
-# ---------------------------------------------------------
 @router.get("/dashboard/sos-events")
 async def fetch_ngo_dashboard_events(
     limit: int = 50,
@@ -83,7 +87,6 @@ async def fetch_ngo_dashboard_events(
     [P1] Tier-2 Responder Dashboard: Fetches all escalated SOS events 
     for NGOs/Police to view on a map and take action.
     """
-    # Fetch logs ordered by the most recent emergency first
     logs = db.query(IncidentLog).order_by(IncidentLog.created_at.desc()).limit(limit).all()
     
     return [
