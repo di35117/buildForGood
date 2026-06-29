@@ -3,8 +3,7 @@ from typing import List, Tuple
 
 class SessionInitRequest(BaseModel):
     user_id: str
-    route_id: str
-    # A list of [latitude, longitude] coordinates defining the safe path from the routing engine
+    route_id: str = Field(..., pattern=r'^[a-zA-Z0-9_-]+$')
     safe_path: List[Tuple[float, float]] = Field(..., min_items=2)
 
 class SessionInitResponse(BaseModel):
