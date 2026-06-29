@@ -1,7 +1,8 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional
 from sqlalchemy.orm import Session
+from jose import jwt, JWTError
 
 from app.services.fusion_engine import FusionEngine
 from app.services.connection_manager import manager
@@ -9,26 +10,56 @@ from .escalation import start_escalation_countdown
 from app.api.deps import get_current_user, get_db
 from app.models.user import User
 from app.core.security import verify_password
+from app.core.config import settings
 
 router = APIRouter()
 
 # ---------------------------------------------------------
-# 1. THE WEBSOCKET LISTENER (React Native connects here)
+# 1. THE SECURED WEBSOCKET LISTENER (React Native connects here)
 # ---------------------------------------------------------
-@router.websocket("/ws/{user_id}")
-async def user_websocket_endpoint(websocket: WebSocket, user_id: str):
+# 🔥 FIX (Bug 2.5): No user_id in path. Requires token validation.
+@router.websocket("/ws")
+async def user_websocket_endpoint(
+    websocket: WebSocket, 
+    token: str = Query(...), 
+    db: Session = Depends(get_db)
+):
     """
-    The mobile app opens a connection to this endpoint as soon as the user logs in.
+    The mobile app connects here using ws://...?token=YOUR_JWT_TOKEN
     """
-    await manager.connect(websocket, user_id)
+    user_id_str = None
     try:
+        # 1. Cryptographically decode and verify the token
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+        username: str = payload.get("sub")
+        
+        if not username:
+            await websocket.close(code=1008, reason="Invalid Token")
+            return
+            
+        # 2. Get the real database ID for this user
+        user = db.query(User).filter(User.username == username).first()
+        if not user:
+            await websocket.close(code=1008, reason="User not found")
+            return
+            
+        user_id_str = str(user.id)
+        
+        # 3. Securely connect them to the manager using their verified DB ID
+        await manager.connect(websocket, user_id_str)
+        print(f"User {user.username} securely authenticated to WebSocket.")
+        
         while True:
             data = await websocket.receive_text()
-            print(f"Received message from {user_id}: {data}")
+            print(f"Received message from {user.username}: {data}")
             
+    except JWTError:
+        print("WebSocket rejected: Invalid JWT signature.")
+        await websocket.close(code=1008, reason="Invalid JWT")
     except WebSocketDisconnect:
-        manager.disconnect(user_id)
-        print(f"User {user_id} disconnected from WebSocket.")
+        if user_id_str:
+            manager.disconnect(user_id_str)
+            print(f"User {user_id_str} disconnected from WebSocket.")
 
 # ---------------------------------------------------------
 # 2. THE SENSOR SYNC & TRIGGER (The Fusion Engine)
