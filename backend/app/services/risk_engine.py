@@ -45,8 +45,11 @@ def calculate_area_risk(db: Session, lat: float, lon: float, radius_m: float = 5
         Incident.is_active == True
     ).count()
 
-    # 2. Fetch Spatial Priors 
-    prior = db.query(ColdStartPrior).filter(
+    # 2. Fetch Spatial Priors (🔥 FIX: SQL Averaging for multiple overlapping areas)
+    avg_scores = db.query(
+        func.avg(ColdStartPrior.street_lighting_score).label("avg_street_lit"),
+        func.avg(ColdStartPrior.commercial_density_score).label("avg_comm_density")
+    ).filter(
         func.ST_DWithin(
             cast(ColdStartPrior.geom, Geography),
             cast(WKTElement(point_wkt, srid=4326), Geography),
@@ -54,9 +57,9 @@ def calculate_area_risk(db: Session, lat: float, lon: float, radius_m: float = 5
         )
     ).first()
 
-    # 🔥 FIX (Bug 2.1): Corrected attribute names to match DB model
-    street_lit = prior.street_lighting_score if prior else 1
-    commercial_density = prior.commercial_density_score if prior else 0.65
+    # Extract averages safely, fallback to defaults if no prior exists
+    street_lit = avg_scores.avg_street_lit if (avg_scores and avg_scores.avg_street_lit is not None) else 1.0
+    commercial_density = avg_scores.avg_comm_density if (avg_scores and avg_scores.avg_comm_density is not None) else 0.65
 
     # 3. Construct the Feature Vector
     features = pd.DataFrame([{
