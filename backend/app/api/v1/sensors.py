@@ -19,7 +19,6 @@ router = APIRouter()
 async def user_websocket_endpoint(websocket: WebSocket, user_id: str):
     """
     The mobile app opens a connection to this endpoint as soon as the user logs in.
-    It stays open silently in the background, waiting for push alerts.
     """
     await manager.connect(websocket, user_id)
     try:
@@ -31,16 +30,15 @@ async def user_websocket_endpoint(websocket: WebSocket, user_id: str):
         manager.disconnect(user_id)
         print(f"User {user_id} disconnected from WebSocket.")
 
-
 # ---------------------------------------------------------
 # 2. THE SENSOR SYNC & TRIGGER (The Fusion Engine)
 # ---------------------------------------------------------
 class SensorPayload(BaseModel):
-    user_id: str
+    # 🔥 BOLA FIXED: user_id removed from payload entirely. Never trust the client.
     route_deviation: bool = False
     motion_anomaly: bool = False
     audio_scream: bool = False
-    duress_pin: Optional[str] = None # 🔥 FIX (Bug 2.5): Now expects the actual typed PIN string!
+    duress_pin: Optional[str] = None 
 
 @router.post("/sync")
 async def sync_device_sensors(
@@ -51,32 +49,29 @@ async def sync_device_sensors(
     """
     Ingests high-frequency sensor spikes from the mobile app.
     """
-    # 1. Fetch the authenticated user from the database
     user = db.query(User).filter(User.username == current_user).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # 2. 🔥 FIX (Bug 2.5): Cryptographically verify the Duress PIN!
     is_duress_verified = False
     if payload.duress_pin:
         if user.hashed_duress_pin and verify_password(payload.duress_pin, user.hashed_duress_pin):
             is_duress_verified = True
             print(f"⚠️ DURESS CODE VERIFIED for {user.username}. Silent SOS armed.")
         else:
-            # If they enter the wrong PIN, we quietly ignore it so an attacker 
-            # testing PINs doesn't realize it failed.
             print(f"Failed duress PIN attempt for {user.username}")
             
-    # 3. Construct the verified flags for the Fusion Engine
     flags = {
         "route_deviation": payload.route_deviation,
         "motion_anomaly": payload.motion_anomaly,
         "audio_scream": payload.audio_scream,
-        "duress_pin": is_duress_verified  # Passed as a highly-weighted True/False to the engine
+        "duress_pin": is_duress_verified  
     }
     
+    # 🔥 BOLA FIXED: Threat evaluated strictly against authenticated user ID
+    user_id_str = str(user.id)
     is_critical, active_triggers, score = FusionEngine.evaluate_threat(
-        user_id=payload.user_id, 
+        user_id=user_id_str, 
         flags=flags
     )
     
@@ -88,10 +83,10 @@ async def sync_device_sensors(
             "active_triggers": active_triggers
         }
         
-        await manager.send_personal_alert(alert_payload, payload.user_id)
-        print(f"🚨 WEBSOCKET PUSHED: Alert sent to {payload.user_id}'s device.")
+        await manager.send_personal_alert(alert_payload, user_id_str)
+        print(f"🚨 WEBSOCKET PUSHED: Alert sent to {user_id_str}'s device.")
         
-        await start_escalation_countdown(payload.user_id)
+        await start_escalation_countdown(user_id_str)
 
     return {
         "status": "evaluated",
