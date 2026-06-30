@@ -1,4 +1,4 @@
-import React, { createContext, useState, ReactNode } from 'react';
+import React, { createContext, useState, ReactNode } from "react";
 
 // Define the context shape for TypeScript
 interface TelemetryContextType {
@@ -6,7 +6,9 @@ interface TelemetryContextType {
   setRiskScore: (score: number) => void;
 }
 
-export const TelemetryContext = createContext<TelemetryContextType | null>(null);
+export const TelemetryContext = createContext<TelemetryContextType | null>(
+  null,
+);
 
 export const TelemetryProvider = ({ children }: { children: ReactNode }) => {
   const [riskScore, setRiskScore] = useState<number>(0);
